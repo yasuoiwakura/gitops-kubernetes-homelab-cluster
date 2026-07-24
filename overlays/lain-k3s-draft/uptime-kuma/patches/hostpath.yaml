@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uptime-kuma
+spec:
+  template:
+    spec:
+      volumes:
+        - name: data
+          hostPath:
+            path: /mnt/plain_k3s/pod-data/uptime-kuma
+            type: DirectoryOrCreate

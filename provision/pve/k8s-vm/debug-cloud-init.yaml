@@ -1,0 +1,53 @@
+#cloud-config
+# ===========================================
+# Debug Cloud-init Config (Minimal - SSH TEST ONLY)
+# ===========================================
+
+# System configuration
+hostname: ${VM_NAME}
+manage_etc_hosts: true
+locale: en_US.UTF-8
+timezone: UTC
+
+# User configuration
+# users:
+#   - name: ubuntu
+#     groups: sudo
+#     shell: /bin/bash
+#     sudo: ['ALL=(ALL) NOPASSWD:ALL']
+
+# # SSH Keys are set via qm set --sshkeys, NOT in this file!
+# # This file is loaded as vendor-data, which augments the user-data.
+
+# #     ssh_authorized_keys:
+# # ${SSH_KEY_YAML}
+# #   - name: root
+# #     ssh_authorized_keys:
+# # ${SSH_KEY_YAML}
+# #     lock_passwd: false
+# ssh_pwauth: true
+# disable_root: false
+
+# # NO packages - we want to test SSH immediately!
+
+# # Fix SSH root login
+# write_files:
+#   - path: /etc/ssh/sshd_config.d/60-root-login.conf
+#     owner: root:root
+#     permissions: '0644'
+#     content: |
+#       PermitRootLogin yes
+#       PasswordAuthentication no
+
+# # System commands
+# runcmd:
+#   - systemctl restart ssh
+#   - echo "=== SSH ROOT LOGIN TEST ==="
+#   - echo "Hostname: $(hostname)"
+#   - echo "IP: $(hostname -I)"
+#   - echo "Root SSH Key:"
+#   - cat /root/.ssh/authorized_keys
+#   - echo "=== SSHD Config ==="
+#   - grep -E "(PermitRootLogin|PasswordAuthentication)" /etc/ssh/sshd_config
+#   - echo "=== TEST COMPLETE ==="
+#   - echo "Try: ssh root@$(hostname -I | awk '{print $1}')"

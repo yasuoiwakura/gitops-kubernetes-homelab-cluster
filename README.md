@@ -1,83 +1,118 @@
-# k3s + Kustomize + ArgoCD – Homelab GitOps (PVE LXC)
+# k8s-apps – Homelab GitOps on Proxmox VE
 
-> **Purpose:** Project overview, entry point, and public-facing documentation.
-> Use this to understand what this repo contains and how to get started.
+> GitOps-driven Kubernetes clusters on Proxmox VE using k3s/kubeadm, Kustomize, and ArgoCD.
 
-GitOps-driven homelab cluster on Proxmox VE LXC with k3s, Kustomize and ArgoCD.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Proxmox%20VE-orange.svg)](https://www.proxmox.com/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.37-blue.svg)](https://kubernetes.io/)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-GitOps-brightgreen.svg)](https://argo-cd.readthedocs.io/)
 
-This repository is a spin-off of my private Gitea repository at `git.blox.media`.
-The GitHub branch serves as a public reference and follows with a delay.
-If you want to mirror this repo in your own ArgoCD, adjust the Git URLs
-in the configuration files (e.g. `provision/example.conf`, `provision/lain-k3s-draft.conf`,
-`argocd/root.lain-k3s-draft.yaml`) to point to your own fork.
-Also, my mount points may not make sense for your setup.
+## Quick Start
 
-## App
+### Option 1: LXC (k3s)
 
-**Uptime Kuma** – Self-hosted uptime monitoring, deployed via ArgoCD in namespace `uptime-kuma`.
-NodePort 30001, persistent volume via ZFS bind-mount from the PVE host.
+```bash
+# Clone and provision a k3s cluster on PVE LXC
+git clone https://github.com/your-user/k8s-apps.git
+cd k8s-apps/provision
+./provision-pve-lxc.sh lain-k3s-draft.conf
+```
 
-## Tech Stack
+### Option 2: VM (kubeadm + cloud-init)
 
-| Layer | Technology |
-|---|---|
-| Virtualization | Proxmox VE (LXC, privileged Debian 13) |
-| Kubernetes | k3s (Lightweight K8s) |
-| Manifest Management | Kustomize (base + overlays) |
-| GitOps | ArgoCD (Application CRDs, Root App) |
-| Git | Gitea (self-hosted) |
-| Ingress | Traefik (k3s built-in, optional) |
+```bash
+# Upload to Proxmox host and create K8s VM
+scp provision/pve/k8s-vm/* root@proxmox-host:/root/
+ssh root@proxmox-host "./create-k8s-vm.sh lain.conf"
+```
 
 ## Architecture
 
-Git as single source of truth – Kustomize overlays per cluster, ArgoCD syncs automatically.
-
 ```
 k8s-apps/
-├── base/uptime-kuma/          # Cluster-neutral manifests
-├── overlays/lain-k3s-draft/   # Cluster-specific patches
-├── argocd/lain-k3s-draft/     # ArgoCD Application definitions
-├── provision/                 # PVE-LXC provisioning (k3s + ArgoCD)
-└── doc/                       # Documentation
+├── base/                         # Cluster-neutral Kustomize manifests
+│   └── uptime-kuma/
+├── overlays/                     # Cluster-specific patches
+│   └── lain-k3s-draft/
+├── argocd/                       # ArgoCD Application definitions
+│   └── lain-k3s-draft/
+├── provision/
+│   ├── provision-pve-lxc.sh      # LXC provisioning (k3s)
+│   └── pve/k8s-vm/              # VM provisioning (kubeadm + cloud-init)
+└── doc/                          # Documentation
 ```
+
+## Tech Stack
+
+| Layer | LXC Path | VM Path |
+|---|---|---|
+| **Virtualization** | Proxmox VE LXC (Debian 13) | Proxmox VE VM (Ubuntu 26.04) |
+| **Kubernetes** | k3s | kubeadm + containerd |
+| **Manifests** | Kustomize (base + overlays) | Kustomize (base + overlays) |
+| **GitOps** | ArgoCD (Root App) | ArgoCD (TODO) |
+| **CNI** | k3s built-in (Flannel) | Flannel |
+
+## Apps
+
+| App | Namespace | NodePort | Description |
+|---|---|---|---|
+| Uptime Kuma | `uptime-kuma` | 30001 | Self-hosted uptime monitoring |
 
 ## Feature Status
 
 | Status | Feature |
 |---|---|
-| ✓ | PVE-LXC provisioning (idempotent Bash script) |
-| ✓ | ArgoCD Root App + auto-deploy |
-| ◻ | Helm charts as additional templating |
-| ◻ | Secrets manager (external-secrets / sealed-secrets) |
-| ◻ | Second cluster (Strato vServer) |
-| ◻ | Migration LXC → VM + cloud-init |
+| ✅ | PVE-LXC provisioning (idempotent Bash script) |
+| ✅ | PVE-VM provisioning (kubeadm + cloud-init) |
+| ✅ | ArgoCD Root App + auto-deploy (k3s only) |
+| 🔲 | Helm charts as additional templating |
+| 🔲 | Secrets manager (external-secrets / sealed-secrets) |
+| 🔲 | Second cluster (Strato vServer) |
 
-## IaC
+## Provisioning
 
-Infrastructure is set up via the provisioning script in [`provision/`](provision/):
-idempotent Bash steps for LXC creation, k3s, Helm, ArgoCD, and Root App.
-See [`doc/lxc-k3s.md`](doc/lxc-k3s.md) for details.
+K3S and LXC Containers are both **discouraged**:
+-  LXC needs high privileges to run containerd and there is always potential for trouble. Use it only for testing and if your RAM is REALLY low.
+-  Vanilla Kubernetes works also Single-Node, kubeadm and kubectl make it easy, just use vanilla.
 
-A full IaC setup (Terraform/Packer) for VM + cloud-init is planned for the future.
+### LXC (k3s)
 
-## Security Caveats & Attack Vectors
+Idempotent Bash script that sets up k3s inside a PVE LXC container.
 
-This repo is a homelab project and does NOT follow security best practices:
-- The LXC container has so many privileges that a compromise could also take over the Proxmox hypervisor.
-- The LXC root user has write access to the `.mounted` script, which is executed by the PVE host root.
-This is a learning project – for critical deployments, an isolated VM with Kubernetes storage services should be used.
+```bash
+./provision-pve-lxc.sh <config>           # full run
+./provision-pve-lxc.sh <config> --step N  # resume from step N
+./provision-pve-lxc.sh <config> --list    # list steps
+```
 
-## Background
+See [`doc/lxc-k3s.md`](doc/lxc-k3s.md) for the full manual guide.
 
-### Infrastructure Being Migrated From
+### VM (kubeadm + cloud-init)
 
-- Docker Compose on multiple servers
-- 1 git repo per server documenting the current structure
-- No automated CD or self-healing
-- Data directories stored on ZFS
+Creates a single-node K8s cluster on a Proxmox VM using cloud-init.
 
-### Lessons Learned
+```bash
+cd provision/pve/k8s-vm
+./create-k8s-vm.sh lain.conf    # ZFS storage
+./create-k8s-vm.sh default.conf # local-lvm storage
+```
 
-- Docker Compose files can be converted to Kubernetes relatively easily, but complexity increases.
-- For scalable and complex applications, Helm templates should be used.
-- LXC doesn't make sense for k3s – too much tinkering required.
+See [`provision/pve/k8s-vm/README.md`](provision/pve/k8s-vm/README.md) for details.
+
+## Security Caveats
+
+> ⚠️ This is a homelab project – not production-ready.
+
+- Privileged LXC containers can compromise the Proxmox host.
+- LXC root user has write access to the `.mounted` script executed by PVE host root.
+- For critical workloads, use an isolated VM with proper Kubernetes storage services.
+
+## Lessons Learned
+
+- Docker Compose → Kubernetes is relatively easy, but complexity increases.
+- Helm templates are needed for complex applications.
+- LXC for k3s requires too much tinkering – VM is the better path.
+
+## License
+
+[MIT](LICENSE)

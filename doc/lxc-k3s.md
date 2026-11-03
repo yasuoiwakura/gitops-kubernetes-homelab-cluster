@@ -13,7 +13,7 @@ Every step is explained with the actual commands and the reasoning behind them.
 - Proxmox VE 8+ with ZFS storage
 - Debian 13 container template (`pveam download <storage> debian-13-standard_*.tar.zst`)
 - Admin SSH key on the PVE host at `/root/.ssh/authorized_keys`
-- Network: bridge (`vmbr0`), free IP (e.g. `192.168.0.183/24`), gateway, DNS
+- Network: bridge (`vmbr0`), free IP (e.g. `203.0.113.10/24`), gateway, DNS
 - Optional: dmcrypt volume for persistent data
 
 ## 1. Create LXC Container
@@ -26,15 +26,15 @@ pveam list <storage>
 grep -v '^#' /root/.ssh/authorized_keys > /tmp/keys.txt
 
 # Create container
-VMID=183
+VMID=9100
 pct create $VMID <storage>:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst \
   --hostname k3s-draft \
   --memory 4096 \
   --cores 4 \
   --storage local-lvm \
   --rootfs 100 \
-  --net0 name=eth0,bridge=vmbr0,ip=192.168.0.183/24,gw=192.168.0.1 \
-  --nameserver 192.168.0.201 \
+  --net0 name=eth0,bridge=vmbr0,ip=203.0.113.10/24,gw=203.0.113.1 \
+  --nameserver 203.0.113.53 \
   --unprivileged 0 \
   --ssh-public-keys /tmp/keys.txt
 ```
@@ -154,7 +154,7 @@ kubectl patch svc argocd-server -n argocd \
   -p='[{"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30444}]'
 ```
 
-The UI is then reachable at `https://192.168.0.183:30444`.
+The UI is then reachable at `https://203.0.113.10:30444`.
 
 **Retrieve initial admin password:**
 
@@ -190,7 +190,7 @@ metadata:
     argocd.argoproj.io/secret-type: repository
 stringData:
   type: git
-  url: ssh://git@git.blox.media:222/matt/k8s-apps.git
+  url: https://github.com/yasuoiwakura/gitops-kubernetes-homelab-cluster.git
   sshPrivateKey: |
 EOF
 cat ~/.ssh/argocd >> /tmp/repo-secret.yaml
@@ -206,14 +206,14 @@ curl -sSL -o /usr/local/bin/argocd \
 chmod +x /usr/local/bin/argocd
 
 # Login + add repo
-argocd login 192.168.0.183:30444 --name root --username admin --password <pass> --insecure
-argocd repo add ssh://git@git.blox.media:222/matt/k8s-apps.git \
+argocd login 203.0.113.10:30444 --name root --username admin --password <pass> --insecure
+argocd repo add https://github.com/yasuoiwakura/gitops-kubernetes-homelab-cluster.git \
   --ssh-private-key-path /root/.ssh/argocd
 ```
 
 Before `repo add`, the SSH host key of Gitea must be trusted:
 ```bash
-ssh-keyscan -p 222 git.blox.media | argocd cert add-ssh --batch --upsert
+ssh-keyscan -p 22 github.com | argocd cert add-ssh --batch --upsert
 ```
 
 Then restart the repo server to load the new key:
@@ -236,7 +236,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ssh://git@git.blox.media:222/matt/k8s-apps.git
+    repoURL: https://github.com/yasuoiwakura/gitops-kubernetes-homelab-cluster.git
     path: argocd/lain-k3s-draft
     targetRevision: main
     directory:
@@ -270,12 +270,12 @@ not exist → the hook fails → the container does not start.
 
 ```bash
 # Create preflight file (on the data volume)
-echo '#!/bin/true' > /zfs/phison4t/plain/k3s/.mounted
-chmod +x /zfs/phison4t/plain/k3s/.mounted
+echo '#!/bin/true' > /path/to/k3s-data/.mounted
+chmod +x /path/to/k3s-data/.mounted
 
 # Add to container config
-echo "lxc.hook.pre-start: /zfs/phison4t/plain/k3s/.mounted" >> /etc/pve/lxc/$VMID.conf
-echo "mp0: /zfs/phison4t/plain/k3s,mp=/mnt/plain_k3s" >> /etc/pve/lxc/$VMID.conf
+echo "lxc.hook.pre-start: /path/to/k3s-data/.mounted" >> /etc/pve/lxc/$VMID.conf
+echo "mp0: /path/to/k3s-data,mp=/mnt/k3s-data" >> /etc/pve/lxc/$VMID.conf
 ```
 
 **Behavior:**

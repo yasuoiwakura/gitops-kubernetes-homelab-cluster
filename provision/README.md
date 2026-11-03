@@ -8,7 +8,7 @@
 provision/
 ├── provision-pve-lxc.sh    # LXC provisioning (k3s + ArgoCD)
 ├── example.conf            # Template with all options
-├── lain-k3s-draft.conf     # Production config (lain cluster)
+├── lain-k3s-draft.conf     # LXC config (k3s, ZFS)
 └── pve/
     └── k8s-vm/            # VM provisioning (kubeadm + cloud-init)
 ```
@@ -35,19 +35,21 @@ Creates a single-node K8s cluster on a Proxmox VM.
 
 ```bash
 cd pve/k8s-vm
-./create-k8s-vm.sh lain.conf      # ZFS storage
-./create-k8s-vm.sh default.conf   # local-lvm storage
-./create-k8s-vm.sh debug.conf     # minimal (SSH test only)
+./create-k8s-vm.sh default.conf          # vanilla K8s, no ArgoCD
+./create-k8s-vm.sh default-argocd.conf   # ArgoCD + Gateway API (public GitHub)
+./create-k8s-vm.sh default-fast.conf     # same, no first-boot apt upgrades
+./create-k8s-vm.sh debug.conf            # minimal (SSH test only)
 ```
 
 See [`pve/k8s-vm/README.md`](pve/k8s-vm/README.md) for full documentation.
 
 **Configs:**
-| Config | Storage | Purpose |
-|---|---|---|
-| `lain.conf` | zfs_proxmox_1 | Production K8s VM |
-| `default.conf` | local-lvm | Standard setups |
-| `debug.conf` | local-lvm | Cloud-init testing (no K8s) |
+| Config | Purpose |
+|---|---|
+| `default.conf` | Minimal vanilla Kubernetes, 2 GB RAM |
+| `default-argocd.conf` | ArgoCD + Gateway API from the public GitHub repo, 3 GB RAM |
+| `default-fast.conf` | `default-argocd.conf` without first-boot apt upgrades |
+| `debug.conf` | Cloud-init testing (no K8s) |
 
 ## LXC vs VM
 

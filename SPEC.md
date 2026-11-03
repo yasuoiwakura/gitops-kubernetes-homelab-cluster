@@ -13,7 +13,7 @@ Principle: **"Git as single source of truth"** – changes via Git only, ArgoCD 
 
 | Cluster / Overlay | Host | Status |
 |---|---|---|
-| `lain-k3s-draft` | OptiPlex LXC on PVE (192.168.0.183) | active |
+| `lain-k3s-draft` | homelab host LXC on PVE (203.0.113.10) | active |
 | `strato25` | Strato vServer | planned |
 | `ki-laptop` | local laptop (AI development) | planned |
 
@@ -88,4 +88,4 @@ The manual guide with explanations is in [`doc/lxc-k3s.md`](doc/lxc-k3s.md).
 
 - ArgoCD does not install an Ingress controller by default – either use k3s's built-in Traefik (omit `--disable=traefik`) or install your own (e.g. nginx-ingress) via Helm
 - Secrets should NOT be committed directly to Git → use sealed-secrets, external-secrets (Vault), or ArgoCD's `argocd-vault-plugin`
-- `lain-k3s-draft` = OptiPlex (192.168.0.183) → to be replaced with a production name later
+- `lain-k3s-draft` = homelab host (203.0.113.10) → to be replaced with a production name later

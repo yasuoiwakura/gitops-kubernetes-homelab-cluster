@@ -8,5 +8,5 @@ spec:
       volumes:
         - name: data
           hostPath:
-            path: /mnt/plain_k3s/pod-data/uptime-kuma
+            path: /mnt/k3s-data/pod-data/uptime-kuma
             type: DirectoryOrCreate

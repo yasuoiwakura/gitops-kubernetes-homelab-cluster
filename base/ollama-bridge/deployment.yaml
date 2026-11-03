@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama-bridge
+  namespace: ollama-bridge
+  labels:
+    app: ollama-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama-bridge
+  template:
+    metadata:
+      labels:
+        app: ollama-bridge
+    spec:
+      containers:
+        - name: ollama-bridge
+          image: ghcr.io/yasuoiwakura/openai-ollama-api-bridge:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OLLAMA_URL
+              value: "http://203.0.113.42:11434"
+            - name: BRIDGE_PORT
+              value: "8080"
+            - name: NUM_CTX
+              value: "32768"
+            - name: KEEP_ALIVE
+              value: "30m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"

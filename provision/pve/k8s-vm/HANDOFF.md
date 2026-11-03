@@ -14,7 +14,7 @@ The script `create-k8s-vm.sh` successfully creates Kubernetes VMs on both LVM an
 | Storage Type | Volume Path Format | Example |
 |---|---|---|
 | local-lvm | `local-lvm:vm-{VMID}-disk-0` | `local-lvm:vm-199-disk-0` |
-| zfs | `{pool}:{VMID}/vm-{VMID}-disk-0.raw` | `zfs_proxmox_1:180/vm-180-disk-0.raw` |
+| zfs | `{pool}:{VMID}/vm-{VMID}-disk-0.raw` | `local-zfs:180/vm-180-disk-0.raw` |
 | local (dir) | `local:{VMID}/vm-{VMID}-disk-0.qcow2` | `local:100/vm-100-disk-0.qcow2` |
 
 **Solution:** After `qm disk import`, extract the path from `qm config`:
@@ -99,6 +99,30 @@ General rule: never rely on `$HOME` inside cloud-init `runcmd`; set `KUBECONFIG`
 
 ---
 
+## RECENT ADDITIONS (not yet provisioned/tested)
+
+- `k8s-cloud-init.yaml`: installs Helm via the official `get-helm-3` script (same as LXC path)
+- `K8S_CONVENIENCE=true` in `lain.conf`: `k` alias, kubectl/helm completion, `kubectx`/`kubens`
+  (installed via apt, appended to `/root/.bashrc`)
+- `PROVISION_STATUS=true` in `lain.conf`: `provision-status --short` shows step/elapsed
+  and git source on SSH login; `provision-status --benchmark` shows the per-step timings.
+  Data: `/var/lib/provisioning/start.env` (immutable) and `state.env` (mutable copy)
+- `ARGOCD_ENABLED=true` in `lain.conf`: installs ArgoCD (chart `10.11.6` / ArgoCD 3.5.6),
+  registers the repo with a deploy key and applies `argocd/root.k8s-lain.yaml`
+- `GATEWAY_ENABLED=true` in `lain.conf`: includes `argocd/k8s-lain/gateway/`
+  (Gateway API CRDs, NGINX Gateway Fabric 2.8.0, Gateway on NodePort 30080)
+- Kubernetes pinned to **1.36** (newest version tested with ArgoCD 3.5)
+- VM RAM raised to **3072 MB** in `lain.conf`
+- `PACKAGE_UPGRADE` toggle; `lain-fast.conf` includes `lain.conf` and sets it to
+  `false` for faster test runs
+- ArgoCD: NodePort set via Helm values (30444 HTTPS / 30081 HTTP); no `--wait`,
+  readiness waits for server/repo/controller; `done` requires server+controller Ready
+- Public configs: `default.conf` (vanilla, 2 GB), `default-argocd.conf`
+  (public GitHub HTTPS, no deploy key, gateway, 3 GB), `default-fast.conf`
+  (same without first-boot apt upgrades)
+- ArgoCD repo URL supports `https://` (anonymous public repo) as well as `ssh://`
+- Verification checklist: [`doc/feature-tests.md`](../../../doc/feature-tests.md)
+
 ## CURRENT FILE STRUCTURE
 
 ```
@@ -107,7 +131,7 @@ provision/pve/k8s-vm/
 ├── k8s-cloud-init.yaml       # Kubernetes vendor-data (full install)
 ├── debug-cloud-init.yaml     # Minimal vendor-data (SSH test only)
 ├── default.conf              # Default config (local-lvm)
-├── lain.conf                 # Lain config (zfs_proxmox_1)
+├── lain.conf                 # Lain config (local-zfs)
 ├── debug.conf                # Debug config (no packages, fast)
 └── README.md                 # Documentation
 ```
@@ -137,5 +161,7 @@ provision/pve/k8s-vm/
 
 1. Re-provision the full K8s VM and verify: node `Ready`, Flannel running, taint removed automatically
 2. Confirm `/var/log/cloud-init-output.log` has no `localhost:8080` errors
-3. Optionally mark `runcmd` as success even if the last `kubectl` call fails (avoid `cloud-final` failed state)
+3. Verify Helm (`helm version`) and the convenience tooling (`k`, `kubectx`, `kubens`)
+4. Run the checklist in [`doc/feature-tests.md`](../../../doc/feature-tests.md) and update statuses
+5. Optionally mark `runcmd` as success even if the last `kubectl` call fails (avoid `cloud-final` failed state)
 

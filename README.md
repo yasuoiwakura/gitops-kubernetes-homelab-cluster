@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Proxmox%20VE-orange.svg)](https://www.proxmox.com/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.37-blue.svg)](https://kubernetes.io/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.36-blue.svg)](https://kubernetes.io/)
 [![ArgoCD](https://img.shields.io/badge/ArgoCD-GitOps-brightgreen.svg)](https://argo-cd.readthedocs.io/)
 
 ## Quick Start
@@ -23,19 +23,25 @@ cd k8s-apps/provision
 ```bash
 # Upload to Proxmox host and create K8s VM
 scp provision/pve/k8s-vm/* root@proxmox-host:/root/
-ssh root@proxmox-host "./create-k8s-vm.sh lain.conf"
+ssh root@proxmox-host "./create-k8s-vm.sh default.conf"
+
+# Full GitOps (ArgoCD + Gateway API) from the public GitHub repo
+ssh root@proxmox-host "./create-k8s-vm.sh default-argocd.conf"
 ```
 
 ## Architecture
 
 ```
 k8s-apps/
-├── base/                         # Cluster-neutral Kustomize manifests
-│   └── uptime-kuma/
-├── overlays/                     # Cluster-specific patches
+├── base/                         # Kustomize manifests (cluster-neutral)
+│   ├── uptime-kuma/
+│   ├── ollama-bridge/
+│   └── gateway/                  # Gateway API Gateway resource
+├── overlays/                     # Cluster-specific patches (k3s only)
 │   └── lain-k3s-draft/
 ├── argocd/                       # ArgoCD Application definitions
-│   └── lain-k3s-draft/
+│   ├── lain-k3s-draft/           # k3s cluster
+│   └── k8s-lain/                 # kubeadm cluster (gateway/ = API gateway apps)
 ├── provision/
 │   ├── provision-pve-lxc.sh      # LXC provisioning (k3s)
 │   └── pve/k8s-vm/              # VM provisioning (kubeadm + cloud-init)
@@ -49,7 +55,8 @@ k8s-apps/
 | **Virtualization** | Proxmox VE LXC (Debian 13) | Proxmox VE VM (Ubuntu 26.04) |
 | **Kubernetes** | k3s | kubeadm + containerd |
 | **Manifests** | Kustomize (base + overlays) | Kustomize (base + overlays) |
-| **GitOps** | ArgoCD (Root App) | ArgoCD (TODO) |
+| **GitOps** | ArgoCD (Root App) | ArgoCD (Root App, bootstrapped) |
+| **Gateway API** | – | NGINX Gateway Fabric (GitOps) |
 | **CNI** | k3s built-in (Flannel) | Flannel |
 
 ## Apps
@@ -57,6 +64,8 @@ k8s-apps/
 | App | Namespace | NodePort | Description |
 |---|---|---|---|
 | Uptime Kuma | `uptime-kuma` | 30001 | Self-hosted uptime monitoring |
+| Ollama Bridge | `ollama-bridge` | 30008 | OpenAI ↔ Ollama API proxy |
+| NGINX Gateway Fabric | `nginx-gateway` | 30080 (HTTP data plane) | Gateway API implementation |
 
 ## Feature Status
 
@@ -64,7 +73,8 @@ k8s-apps/
 |---|---|
 | ✅ | PVE-LXC provisioning (idempotent Bash script) |
 | ✅ | PVE-VM provisioning (kubeadm + cloud-init) |
-| ✅ | ArgoCD Root App + auto-deploy (k3s only) |
+| ✅ | ArgoCD Root App + auto-deploy (k3s and kubeadm VM) |
+| ✅ | Gateway API via NGINX Gateway Fabric (GitOps, VM) |
 | 🔲 | Helm charts as additional templating |
 | 🔲 | Secrets manager (external-secrets / sealed-secrets) |
 | 🔲 | Second cluster (Strato vServer) |
@@ -93,8 +103,9 @@ Creates a single-node K8s cluster on a Proxmox VM using cloud-init.
 
 ```bash
 cd provision/pve/k8s-vm
-./create-k8s-vm.sh lain.conf    # ZFS storage
-./create-k8s-vm.sh default.conf # local-lvm storage
+./create-k8s-vm.sh default.conf          # vanilla K8s
+./create-k8s-vm.sh default-argocd.conf   # ArgoCD + Gateway API
+./create-k8s-vm.sh default-fast.conf     # same, no first-boot apt upgrades
 ```
 
 See [`provision/pve/k8s-vm/README.md`](provision/pve/k8s-vm/README.md) for details.

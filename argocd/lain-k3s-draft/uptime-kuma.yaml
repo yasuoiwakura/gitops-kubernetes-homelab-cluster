@@ -4,11 +4,11 @@ metadata:
   name: uptime-kuma
   namespace: argocd
   annotations:
-    link.argocd.argoproj.io/external-link: http://192.168.0.183:30001
+    link.argocd.argoproj.io/external-link: http://203.0.113.10:30001
 spec:
   project: default
   source:
-    repoURL: ssh://git@git.blox.media:222/matt/k8s-apps.git
+    repoURL: https://github.com/yasuoiwakura/gitops-kubernetes-homelab-cluster.git
     path: overlays/lain-k3s-draft/uptime-kuma
     targetRevision: HEAD
   destination:

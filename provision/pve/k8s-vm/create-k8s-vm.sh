@@ -2,7 +2,7 @@
 set -e
 
 # Bash script to create a Kubernetes VM in Proxmox VE with cloud-init
-# Kubernetes 1.37 - Ubuntu 26.04 LTS - Single Node Cluster
+# Kubernetes 1.36 - Ubuntu 26.04 LTS - Single Node Cluster
 
 # Configuration
 # ===========================================
@@ -11,7 +11,7 @@ set -e
 if [ -z "$1" ]; then
     echo "ERROR: No config file specified!"
     echo "Usage: $0 <config-file>"
-    echo "Available configs: default.conf, lain.conf, debug.conf"
+    echo "Available configs: default.conf, default-argocd.conf, default-fast.conf, debug.conf"
     exit 1
 fi
 
@@ -19,7 +19,7 @@ CONFIG="$1"
 
 if [ ! -f "$CONFIG" ]; then
     echo "ERROR: Config file $CONFIG not found!"
-    echo "Available configs: default.conf, lain.conf, debug.conf"
+    echo "Available configs: default.conf, default-argocd.conf, default-fast.conf, debug.conf"
     exit 1
 fi
 
@@ -37,8 +37,109 @@ for var in $REQUIRED_VARS; do
 done
 
 # Set defaults for optional variables
-K8S_VERSION="${K8S_VERSION:-1.37}"
+K8S_VERSION="${K8S_VERSION:-1.36}"
+PACKAGE_UPGRADE="${PACKAGE_UPGRADE:-true}"
+case "$PACKAGE_UPGRADE" in
+    true|false) ;;
+    *) echo "ERROR: PACKAGE_UPGRADE must be 'true' or 'false'!"; exit 1 ;;
+esac
 CLOUD_INIT_TEMPLATE="${CLOUD_INIT_TEMPLATE:-k8s-cloud-init.yaml}"
+K8S_CONVENIENCE="${K8S_CONVENIENCE:-false}"
+case "$K8S_CONVENIENCE" in
+    true|false) ;;
+    *) echo "ERROR: K8S_CONVENIENCE must be 'true' or 'false'!"; exit 1 ;;
+esac
+
+PROVISION_STATUS="${PROVISION_STATUS:-false}"
+case "$PROVISION_STATUS" in
+    true|false) ;;
+    *) echo "ERROR: PROVISION_STATUS must be 'true' or 'false'!"; exit 1 ;;
+esac
+PROVISION_ROLE="${PROVISION_ROLE:-k8s-vm}"
+
+# ArgoCD bootstrap (GitOps) defaults
+ARGOCD_ENABLED="${ARGOCD_ENABLED:-false}"
+case "$ARGOCD_ENABLED" in
+    true|false) ;;
+    *) echo "ERROR: ARGOCD_ENABLED must be 'true' or 'false'!"; exit 1 ;;
+esac
+ARGOCD_CHART_VERSION="${ARGOCD_CHART_VERSION:-10.11.6}"
+ARGOCD_NODEPORT="${ARGOCD_NODEPORT:-30444}"
+ARGOCD_REPO_URL="${ARGOCD_REPO_URL:-}"
+ARGOCD_REPO_KEY="${ARGOCD_REPO_KEY:-}"
+ARGOCD_ROOT_APP_PATH="${ARGOCD_ROOT_APP_PATH:-argocd/k8s-lain}"
+ARGOCD_TARGET_REVISION="${ARGOCD_TARGET_REVISION:-main}"
+
+GATEWAY_ENABLED="${GATEWAY_ENABLED:-false}"
+case "$GATEWAY_ENABLED" in
+    true|false) ;;
+    *) echo "ERROR: GATEWAY_ENABLED must be 'true' or 'false'!"; exit 1 ;;
+esac
+if [ "$GATEWAY_ENABLED" = "true" ]; then
+    ARGOCD_DIRECTORY_EXCLUDE="__none__"
+else
+    ARGOCD_DIRECTORY_EXCLUDE="gateway/*"
+fi
+
+ARGOCD_REPO_KEY_B64=""
+ARGOCD_REPO_HOST=""
+ARGOCD_REPO_PORT=22
+if [ "$ARGOCD_ENABLED" = "true" ]; then
+    [ -n "$ARGOCD_REPO_URL" ] || { echo "ERROR: ARGOCD_REPO_URL is empty!"; exit 1; }
+    case "$ARGOCD_REPO_URL" in
+        ssh://*)
+            ARGOCD_REPO_KEY="${ARGOCD_REPO_KEY:-/root/.ssh/argocd}"
+            [ -f "$ARGOCD_REPO_KEY" ] || {
+                echo "ERROR: ArgoCD repo key $ARGOCD_REPO_KEY not found!"
+                echo "Create one with: ssh-keygen -t ed25519 -f $ARGOCD_REPO_KEY -N '' -C 'argocd@$VM_NAME'"
+                echo "and add ${ARGOCD_REPO_KEY}.pub as a read-only deploy key in your Git server."
+                exit 1
+            }
+            ARGOCD_REPO_KEY_B64="$(base64 -w0 "$ARGOCD_REPO_KEY")"
+            ARGOCD_REPO_HOST="$(printf '%s' "$ARGOCD_REPO_URL" | sed -E 's#^[a-z]+://[^@]+@([^/:]+).*#\1#')"
+            ARGOCD_REPO_PORT="$(printf '%s' "$ARGOCD_REPO_URL" | sed -nE 's#^[a-z]+://[^@]+@[^/:]+:([0-9]+)/.*#\1#p')"
+            [ -n "$ARGOCD_REPO_PORT" ] || ARGOCD_REPO_PORT=22
+            ;;
+        https://*)
+            # Public HTTPS repository: anonymous read, no deploy key
+            ARGOCD_REPO_KEY=""
+            ARGOCD_REPO_KEY_B64=""
+            ARGOCD_REPO_HOST=""
+            ARGOCD_REPO_PORT=22
+            ;;
+        *)
+            echo "ERROR: ARGOCD_REPO_URL must start with ssh:// or https://"
+            exit 1
+            ;;
+    esac
+fi
+
+# Provisioning metadata injected into the VM (/var/lib/provisioning/start.env)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_FILE="$(basename "$0")"
+SCRIPT_SHA256="$(sha256sum "$0" | awk '{print $1}')"
+CONF_FILE="$(basename "$CONFIG")"
+CONF_SHA256="$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')"
+TEMPLATE_FILE="$(basename "$CLOUD_INIT_TEMPLATE")"
+TEMPLATE_SHA256="$(sha256sum "$CLOUD_INIT_TEMPLATE" 2>/dev/null | awk '{print $1}')"
+PROVISION_START="$(date -u -Is)"
+PROVISION_START_EPOCH="$(date +%s)"
+
+if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    REPO_NAME="$(basename "$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)")"
+    GIT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD)"
+    GIT_COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD)"
+    GIT_COMMIT_DATE="$(git -C "$SCRIPT_DIR" show -s --format=%cI HEAD)"
+    if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain -- .)" ]; then
+        GIT_DIRTY="yes"
+    else
+        GIT_DIRTY="no"
+    fi
+else
+    echo "NOTE: no git repository at $SCRIPT_DIR - branch/commit will be 'unknown'"
+    REPO_NAME="unknown"; GIT_BRANCH="unknown"; GIT_COMMIT="unknown"
+    GIT_COMMIT_DATE="unknown"; GIT_DIRTY="unknown"
+fi
 
 # # Read ALL SSH keys (filter out comments and empty lines, keep newlines for YAML list)
 # # Cloud-init expects a list of keys, one per line
@@ -143,12 +244,42 @@ echo "Processing cloud-init template..."
 TEMP_FILE=$(mktemp)
 cp "$CLOUD_INIT_TEMPLATE" "$TEMP_FILE"
 
+# Escape sed replacement characters (&, |, \)
+sed_escape() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
+
 # Replace variables
 sed -i \
     -e "s|\${VM_NAME}|$VM_NAME|g" \
     -e "s|\${IP_ADDRESS%/*}|${IP_ADDRESS%/*}|g" \
     -e "s|\${POD_NETWORK_CIDR}|$POD_NETWORK_CIDR|g" \
     -e "s|\${K8S_VERSION}|$K8S_VERSION|g" \
+    -e "s|\${PACKAGE_UPGRADE}|$PACKAGE_UPGRADE|g" \
+    -e "s|\${K8S_CONVENIENCE}|$K8S_CONVENIENCE|g" \
+    -e "s|\${ARGOCD_ENABLED}|$(sed_escape "$ARGOCD_ENABLED")|g" \
+    -e "s|\${ARGOCD_CHART_VERSION}|$(sed_escape "$ARGOCD_CHART_VERSION")|g" \
+    -e "s|\${ARGOCD_NODEPORT}|$(sed_escape "$ARGOCD_NODEPORT")|g" \
+    -e "s|\${ARGOCD_REPO_URL}|$(sed_escape "$ARGOCD_REPO_URL")|g" \
+    -e "s|\${ARGOCD_REPO_KEY_B64}|$(sed_escape "$ARGOCD_REPO_KEY_B64")|g" \
+    -e "s|\${ARGOCD_REPO_HOST}|$(sed_escape "$ARGOCD_REPO_HOST")|g" \
+    -e "s|\${ARGOCD_REPO_PORT}|$(sed_escape "$ARGOCD_REPO_PORT")|g" \
+    -e "s|\${ARGOCD_ROOT_APP_PATH}|$(sed_escape "$ARGOCD_ROOT_APP_PATH")|g" \
+    -e "s|\${ARGOCD_TARGET_REVISION}|$(sed_escape "$ARGOCD_TARGET_REVISION")|g" \
+    -e "s|\${ARGOCD_DIRECTORY_EXCLUDE}|$(sed_escape "$ARGOCD_DIRECTORY_EXCLUDE")|g" \
+    -e "s|\${PROVISION_STATUS}|$(sed_escape "$PROVISION_STATUS")|g" \
+    -e "s|\${PROVISION_ROLE}|$(sed_escape "$PROVISION_ROLE")|g" \
+    -e "s|\${REPO_NAME}|$(sed_escape "$REPO_NAME")|g" \
+    -e "s|\${GIT_BRANCH}|$(sed_escape "$GIT_BRANCH")|g" \
+    -e "s|\${GIT_COMMIT}|$(sed_escape "$GIT_COMMIT")|g" \
+    -e "s|\${GIT_COMMIT_DATE}|$(sed_escape "$GIT_COMMIT_DATE")|g" \
+    -e "s|\${GIT_DIRTY}|$(sed_escape "$GIT_DIRTY")|g" \
+    -e "s|\${PROVISION_START}|$(sed_escape "$PROVISION_START")|g" \
+    -e "s|\${PROVISION_START_EPOCH}|$(sed_escape "$PROVISION_START_EPOCH")|g" \
+    -e "s|\${SCRIPT_FILE}|$(sed_escape "$SCRIPT_FILE")|g" \
+    -e "s|\${SCRIPT_SHA256}|$(sed_escape "$SCRIPT_SHA256")|g" \
+    -e "s|\${CONF_FILE}|$(sed_escape "$CONF_FILE")|g" \
+    -e "s|\${CONF_SHA256}|$(sed_escape "$CONF_SHA256")|g" \
+    -e "s|\${TEMPLATE_FILE}|$(sed_escape "$TEMPLATE_FILE")|g" \
+    -e "s|\${TEMPLATE_SHA256}|$(sed_escape "$TEMPLATE_SHA256")|g" \
     "$TEMP_FILE"
 
 cp "$TEMP_FILE" "$CLOUD_INIT_SNIPPET_PATH"

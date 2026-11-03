@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-bridge
+  namespace: ollama-bridge
+  labels:
+    app: ollama-bridge
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30008
+  selector:
+    app: ollama-bridge

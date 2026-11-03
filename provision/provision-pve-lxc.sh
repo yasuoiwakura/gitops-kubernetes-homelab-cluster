@@ -10,11 +10,12 @@ LXC_CONF_DIR=/etc/pve/lxc
 
 usage() {
     cat <<USAGE
-Usage: $0 <config> [--step N | --list]
+Usage: $0 <config> [--step N | --list] [--yes]
 
-  config   Cluster config file (e.g. lain-k3s-draft.conf)
+  config   Cluster config file (e.g. default-lxc.conf)
   --step N Start from step N (1-13)
   --list   List steps
+  --yes    Accept a privileged LXC without prompting (automation)
 USAGE
     exit 0
 }
@@ -32,28 +33,25 @@ CONFIG="$1"
 [ -f "$CONFIG" ] || die "Config $CONFIG not found"
 source "$CONFIG"
 
-# Derive cluster name from config filename (e.g. lain-k3s-draft.conf → lain-k3s-draft)
+# Derive cluster name from config filename (e.g. default-lxc.conf → default-lxc)
 CLUSTER_NAME=$(basename "$CONFIG" .conf)
 
-# Security check: privileged containers
-if [ "${UNPRIVILEGED:-1}" = "0" ] && \
-   [ "${I_DONT_CARE_PRIVILEGED_CONTAINERS_ARE_INSECURE:-false}" != "true" ]; then
-    echo ""
-    echo "  !!! SECURITY WARNING !!!"
-    echo "  This LXC runs as PRIVILEGED (UNPRIVILEGED=0)."
-    echo "  Only suitable for test/development environments."
-    echo ""
-    echo "  Set in the config:"
-    echo "    I_DONT_CARE_PRIVILEGED_CONTAINERS_ARE_INSECURE=true"
-    echo "  to confirm and proceed."
-    echo ""
-    exit 1
+ASSUME_YES="${ASSUME_YES:-false}"
+for arg in "$@"; do
+    case "$arg" in
+        --yes|-y) ASSUME_YES=true ;;
+    esac
+done
+
+ARGOCD_ENABLED="${ARGOCD_ENABLED:-true}"
+case "$ARGOCD_ENABLED" in
+    true|false) ;;
+    *) die "ARGOCD_ENABLED must be 'true' or 'false'" ;;
+esac
+if [ "$ARGOCD_ENABLED" = "true" ] && [ -z "${GITEA_REPO_URL:-}" ]; then
+    die "GITEA_REPO_URL is required when ARGOCD_ENABLED=true"
 fi
 
-STEP=1
-if [ "${2:-}" = "--step" ]; then
-    STEP="${3:?Usage: $0 <config> --step N}"
-fi
 if [ "${2:-}" = "--list" ]; then
     echo "Steps (doc/lxc-k3s.md):"
     echo "  0  Download template (once per PVE node)"
@@ -63,14 +61,46 @@ if [ "${2:-}" = "--list" ]; then
     echo "  4  Install k3s"
     echo "  5  Set up kubeconfig"
     echo "  6  Install Helm"
-    echo "  7  Install ArgoCD"
-    echo "  8  ArgoCD Service"
+    echo "  7  Install ArgoCD (ARGOCD_ENABLED=true)"
+    echo "  8  ArgoCD Service (ARGOCD_ENABLED=true)"
     echo "  9  (Port forward – optional, not in script)"
-    echo " 10  Prepare SSH key + ArgoCD CLI"
-    echo " 11  ArgoCD login + SSH host key + repo server restart"
-    echo " 12  argocd repo add"
-    echo " 13  Create Root App in ArgoCD (auto-deploy)"
+    echo " 10  Prepare SSH key + ArgoCD CLI (ARGOCD_ENABLED=true)"
+    echo " 11  ArgoCD login + SSH host key + repo server restart (ARGOCD_ENABLED=true)"
+    echo " 12  argocd repo add (ARGOCD_ENABLED=true)"
+    echo " 13  Create Root App in ArgoCD (ARGOCD_ENABLED=true)"
     exit 0
+fi
+
+# Security check: privileged containers
+if [ "${UNPRIVILEGED:-1}" = "0" ] && \
+   [ "${I_DONT_CARE_PRIVILEGED_CONTAINERS_ARE_INSECURE:-false}" != "true" ]; then
+    echo ""
+    echo "  !!! SECURITY WARNING !!!"
+    echo "  This LXC runs as PRIVILEGED (UNPRIVILEGED=0)."
+    echo "  Only suitable for test/development environments."
+    echo ""
+    if [ "$ASSUME_YES" = "true" ]; then
+        echo "  Continuing because --yes/ASSUME_YES was given."
+    elif [ -t 0 ]; then
+        printf "  Continue? [y/N] "
+        read -r answer
+        case "$answer" in
+            y|Y|yes|YES) ;;
+            *) echo "  Aborted."; exit 1 ;;
+        esac
+    else
+        echo "  Non-interactive shell. Set in the config:"
+        echo "    I_DONT_CARE_PRIVILEGED_CONTAINERS_ARE_INSECURE=true"
+        echo "  or pass --yes to continue."
+        echo ""
+        exit 1
+    fi
+    echo ""
+fi
+
+STEP=1
+if [ "${2:-}" = "--step" ]; then
+    STEP="${3:?Usage: $0 <config> --step N}"
 fi
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -419,16 +449,25 @@ echo "=== Provisioning: $HOSTNAME (VMID $VMID, $IP) ==="
 [ "$STEP" -le 4 ] && step4
 [ "$STEP" -le 5 ] && step5
 [ "$STEP" -le 6 ] && step6
-[ "$STEP" -le 7 ] && step7
-[ "$STEP" -le 8 ] && step8
-[ "$STEP" -le 10 ] && step10
-[ "$STEP" -le 11 ] && step11
-[ "$STEP" -le 12 ] && step12
-[ "$STEP" -le 13 ] && step13
+
+if [ "$ARGOCD_ENABLED" = "true" ]; then
+    [ "$STEP" -le 7 ] && step7
+    [ "$STEP" -le 8 ] && step8
+    [ "$STEP" -le 10 ] && step10
+    [ "$STEP" -le 11 ] && step11
+    [ "$STEP" -le 12 ] && step12
+    [ "$STEP" -le 13 ] && step13
+else
+    echo "  [HOST] ArgoCD disabled (ARGOCD_ENABLED=false), skipping steps 7, 8, 10-13"
+fi
 
 echo ""
 echo "=== Provisioning complete ==="
 echo "  Cluster: $HOSTNAME"
 echo "  IP:      $IP"
-echo "  ArgoCD:  https://${IP%/*}:$ARGOCD_NODEPORT"
-echo "  Root App will sync automatically (ArgoCD)"
+if [ "$ARGOCD_ENABLED" = "true" ]; then
+    echo "  ArgoCD:  https://${IP%/*}:$ARGOCD_NODEPORT"
+    echo "  Root App will sync automatically (ArgoCD)"
+else
+    echo "  ArgoCD:  disabled (ARGOCD_ENABLED=false)"
+fi

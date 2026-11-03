@@ -379,3 +379,40 @@ Precondition: `GATEWAY_ENABLED=true` and the root app synced.
 | Status | `UNTESTED` |
 | Command | provision with `GATEWAY_ENABLED=false`, then `kubectl -n argocd get applications` |
 | Expected | No `gateway-api-crds`/`nginx-gateway-fabric`/`gateway` applications (excluded via `directory.exclude: gateway/*`) |
+
+---
+
+## 9. LXC Provisioning
+
+### LXC-01 – Privileged confirmation prompt
+
+| Field | Value |
+|---|---|
+| Status | `UNTESTED` |
+| Command | `./provision-pve-lxc.sh default-lxc.conf` |
+| Expected | `Continue? [y/N]`; `n` aborts, `y` proceeds |
+| Notes | Non-interactive without `--yes` aborts with instructions |
+
+### LXC-02 – `--yes` skips the prompt
+
+| Field | Value |
+|---|---|
+| Status | `UNTESTED` |
+| Command | `./provision-pve-lxc.sh default-lxc.conf --yes` |
+| Expected | Proceeds without `read` prompt |
+
+### LXC-03 – ArgoCD disabled
+
+| Field | Value |
+|---|---|
+| Status | `UNTESTED` |
+| Command | provision with `ARGOCD_ENABLED=false` (`default-lxc.conf`) |
+| Expected | Steps 7, 8, 10–13 skipped; final output says `ArgoCD: disabled` |
+
+### LXC-04 – Public default config provisions
+
+| Field | Value |
+|---|---|
+| Status | `UNTESTED` |
+| Command | `./provision-pve-lxc.sh default-lxc.conf --yes` |
+| Expected | k3s node ready; no ArgoCD components |

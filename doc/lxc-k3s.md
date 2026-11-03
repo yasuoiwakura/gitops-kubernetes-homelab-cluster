@@ -8,6 +8,17 @@ on Proxmox VE by hand. Result: k3s + Helm + ArgoCD + first app.
 
 Every step is explained with the actual commands and the reasoning behind them.
 
+## Privileged LXC prompt
+
+`UNPRIVILEGED=0` is required for k3s, but it is insecure. The provisioning
+script prompts `Continue? [y/N]` before creating the container.
+
+- Interactive: answer `y`.
+- Automation: pass `--yes` or set
+  `I_DONT_CARE_PRIVILEGED_CONTAINERS_ARE_INSECURE=true`.
+- `ARGOCD_ENABLED=false` skips the ArgoCD steps (7, 8, 10–13) and provisions
+  plain k3s.
+
 ## Prerequisites
 
 - Proxmox VE 8+ with ZFS storage

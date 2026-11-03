@@ -6,9 +6,9 @@
 
 ```
 provision/
-├── provision-pve-lxc.sh    # LXC provisioning (k3s + ArgoCD)
+├── provision-pve-lxc.sh    # LXC provisioning (k3s + optional ArgoCD)
+├── default-lxc.conf        # Working generic LXC config
 ├── example.conf            # Template with all options
-├── lain-k3s-draft.conf     # LXC config (k3s, ZFS)
 └── pve/
     └── k8s-vm/            # VM provisioning (kubeadm + cloud-init)
 ```
@@ -21,13 +21,20 @@ Idempotent Bash script – steps 1–13, corresponding to [`doc/lxc-k3s.md`](../
 ./provision-pve-lxc.sh <config>           # full run
 ./provision-pve-lxc.sh <config> --step N  # resume from step N
 ./provision-pve-lxc.sh <config> --list    # list steps
+./provision-pve-lxc.sh <config> --yes     # accept privileged LXC (automation)
 ```
+
+`UNPRIVILEGED=0` triggers a `Continue? [y/N]` prompt. Use `--yes` or
+`I_DONT_CARE_PRIVILEGED_CONTAINERS_ARE_INSECURE=true` for non-interactive runs.
+
+`ARGOCD_ENABLED=false` skips the ArgoCD steps (7, 8, 10–13); a plain k3s
+cluster is provisioned. `true` requires `GITEA_REPO_URL`.
 
 **Configs:**
 | Config | Description |
 |---|---|
+| `default-lxc.conf` | Working generic k3s LXC (no ArgoCD) |
 | `example.conf` | Template with documented options |
-| `lain-k3s-draft.conf` | Production cluster (ZFS, 192.168.0.x) |
 
 ## Option 2: VM (kubeadm + cloud-init)
 
